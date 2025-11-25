@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Posture Detector (Browser Only)</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+
+  <style>
+    body { 
+      font-family: sans-serif; 
+      text-align: center; 
+      background: #222; 
+      color: white;
+      transition: background-color 0.8s ease;
+    }
+    video {
+      border-radius: 8px;
+      width: 600px;
+      margin-bottom: 20px;
+    }
+    #statusBox {
+      font-size: 32px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      display: inline-block;
+      background: #555;
+      transition: background-color 0.5s ease, color 0.5s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Posture Detector</h1>
+  <video id="video" autoplay playsinline></video>
+
+  <!-- Text is now BELOW the video -->
+  <div id="statusBox">Loading...</div>
+
+  <script>
+    let detector;
+    const video = document.getElementById("video");
+    const statusBox = document.getElementById("statusBox");
+
+    async function initCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
+      });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    // Basic slouch heuristic
+    function classifyPosture(keypoints) {
+      const nose = keypoints.find(k => k.name === "nose");
+      const leftShoulder = keypoints.find(k => k.name === "left_shoulder");
+      const rightShoulder = keypoints.find(k => k.name === "right_shoulder");
+
+      if (!nose || !leftShoulder || !rightShoulder) return "I";
+
+      const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+
+      // If nose below shoulders → slouch
+      if (nose.y > shoulderY + 80) return "S";
+
+      return "U";
+    }
+
+    async function run() {
+      await initCamera();
+
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+        }
+      );
+
+      statusBox.innerText = "Detecting...";
+
+      async function detect() {
+        const poses = await detector.estimatePoses(video);
+
+        if (poses.length > 0) {
+          const kp = poses[0].keypoints;
+          const posture = classifyPosture(kp);
+
+          if (posture === "U") {
+            statusBox.innerText = "Upright";
+            statusBox.style.background = "#2ecc71";
+            document.body.style.backgroundColor = "#d6f5d6"; // pastel green
+            statusBox.style.color = "#000";
+          } 
+          else if (posture === "S") {
+            statusBox.innerText = "Slouching";
+            statusBox.style.background = "#bb86fc"; // light purple status box
+            document.body.style.backgroundColor = "#e8d6ff"; // pastel purple
+            statusBox.style.color = "#000";
+          } 
+          else {
+            statusBox.innerText = "Idle";
+            statusBox.style.background = "#7f8c8d";
+            document.body.style.backgroundColor = "#eeeeee"; // light grey
+            statusBox.style.color = "#000";
+          }
+        }
+
+        requestAnimationFrame(detect);
+      }
+
+      detect();
+    }
+
+    run();
+  </script>
+</body>
+</html>
